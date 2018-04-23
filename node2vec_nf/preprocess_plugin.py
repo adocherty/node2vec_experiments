@@ -11,7 +11,7 @@ def remap_ids(data, uid_map, mid_map):
     """
     Nm = mid_map.shape[0]
     for ii in range(data.shape[0]):
-        mid, uid = data[ii, :]
+        mid, uid = data[ii, :2]
         new_mid = np.searchsorted(mid_map, mid)
         new_uid = np.searchsorted(uid_map, uid)
 
@@ -27,8 +27,12 @@ def preprocess_nf(handler, inputs, output, parameters):
     dataset_name = input_spec['dataset_name']
 
     # Load edgelist
-    data = pd.read_csv(edgelist_name, names=['mId', 'uId'],
-                       sep=" ", header=None, dtype='int32')
+    data = pd.read_csv(edgelist_name,
+                       names=['mId', 'uId', 'score'],
+                       sep=",",
+                       header=None,
+                       usecols=[0,1,3],
+                       dtype='int64')
 
     # Enumerate movies
     mids = np.unique(data['mId'])
@@ -49,17 +53,19 @@ def preprocess_nf(handler, inputs, output, parameters):
     # Node ids
     Nm = len(mids);
     Nu = len(uids)
+
+    # Node ID map back to movie and user IDs
     movie_id_map = {i: "m_{}".format(mId) for i, mId in enumerate(mids)}
     user_id_map = {i + Nm: "u_{}".format(uId) for i, uId in enumerate(uids)}
     id_map = {**movie_id_map, **user_id_map}
     inv_id_map = dict(zip(id_map.values(), id_map.keys()))
 
-    # ID maps for node2vec
-    default_map = {i: i for i in range(Nm + Nu)}
-
     # Save as graph in required formats
-    edge_list_filename = os.path.join(output, "nf_edgelist_remap.txt")
-    data.to_csv(edge_list_filename, sep=' ', header=False, index=False)
+    edge_list_filename = os.path.join(output, "nf_edge_homogeneous.txt")
+    data.to_csv(edge_list_filename, sep=' ', columns=['uId', 'mId'], header=False, index=False)
+
+    edge_label_filename = os.path.join(output, "nf_edge_labels.txt")
+    data.to_csv(edge_label_filename, sep=' ', columns=['score'], header=False, index=False)
 
     vertex_map_loc = handler.save_as_pickle(id_map, "vertex_map.pkl")
     inv_vertex_map_loc = handler.save_as_pickle(inv_id_map, "inv_vertex_map.pkl")

@@ -101,7 +101,7 @@ class Node2VecWorkflow(se.Workflow):
 
     def workflow(self):
         input_graph = self.add_task(se.LocalDataset,
-                                    location="nf_edgelist_1-1000.csv",
+                                    location="nf_edges_1-1000.csv",
                                     params=input_params)
 
         nf_converter = self.add_task(NFConverter)
