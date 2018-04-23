@@ -244,13 +244,13 @@ class W2V_Sampled:
         batch_size_t = tf.cast(tf.shape(target_input)[0], tf.float32)
 
         # Variables.
-        init_width = 0.5/self.embedding_size
         embeddings = tf.get_variable("target_embeddings",
                                      shape=embeddings_shape,
                                      initializer=tf.glorot_normal_initializer())
-        context_weights = tf.get_variable("context_embeddings",
-                                     shape=embeddings_shape,
-                                     initializer=tf.glorot_normal_initializer())
+        context_weights = embeddings
+        # context_weights = tf.get_variable("context_embeddings",
+        #                              shape=embeddings_shape,
+        #                              initializer=tf.glorot_normal_initializer())
         context_biases = tf.get_variable("context_biases",
                                      shape=[self.vocabulary_size],
                                      initializer=tf.zeros_initializer)
@@ -657,6 +657,6 @@ if __name__ == "__main__":
                        freeze_indices=freeze_indices,
                        freeze_context_indices=freeze_context_indices,
                        restore_from_file=checkpoint_file,
-                       n_epochs=10)
+                       n_epochs=3)
 
 
