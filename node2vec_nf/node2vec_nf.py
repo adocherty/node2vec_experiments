@@ -21,9 +21,10 @@ import argparse
 import os
 import logging
 import sciluigi as sl
-from stellar_evaluation as se
+import stellar_evaluation as se
 
 from preprocess_plugin import preprocess_nf
+from plugins.representation_learning_plugin import Node2Vec_task
 
 # Use sciluigi logger
 logger = logging.getLogger('sciluigi-interface')
@@ -33,37 +34,25 @@ logger = logging.getLogger('sciluigi-interface')
 # ------------------------------------------------------------------------
 default_cache_directory = "./cache"
 
-input_dataset = os.path.abspath('nf_graph/')
-
 input_params = {
     'dataset_name': 'NF'
-}
-epgm_converter_params = {
-    'node_type': None,
-    'target_attribute': "subject",   # Target attribute to use for inference
-    'attributes_to_ignore': []
-}
-epgm_writer_params = {
-    'target_attribute': "subject"    # Which attribute to write the predictions
 }
 splitter_params = {
     'num_samples_per_class': 20,
     'test_size': 1000,
     'seed': 345084,
 }
-
-representation_learning_params = {
+node2vec_params = {
     "p": 1.0, "q": 1.0,
-    "dimensions": 128,
-    'num_walks': 1,  # Number of walks from each node
+    "dimensions": 256,
+    'num_walks': 2,  # Number of walks from each node
     'walk_length': 10,  # Walk length
     'window_size': 5,  # Context size for word2vec
-    'iter': 2,  # number of SGD iterations (epochs)
+    'iter': 1,  # number of SGD iterations (epochs)
     'workers': 4,  # number of workers for word2vec
     'weighted': False,  # are edges weighted?
     'directed': False,  # are edges directed?
 }
-
 inference_params = {
     # type of data to use for inference: 'with_attributes', 'with_embeddings', or 'with_metric',
     'method': 'logistic',  # inference method to use: one of logistic, rforest, kNN
@@ -77,45 +66,51 @@ inference_params = {
 # Task classes
 # ------------------------------------------------------------------------
 
-NFConverter = se.local_task_class(preprocess_plugin, ['edgelist', 'dataset_name'])
+NFConverter = se.local_task_class(preprocess_nf,
+                                  ['in_edgelist'])
+Node2Vec = se.local_task_class(Node2Vec_task,
+                                  ['in_vector'])
 
-EPGMConverter = se.http_task_class('http://localhost:5000/',
-                                   'epgm_converter',
-                                   ['in_epgm'])
-
-EPGMWriter = se.http_task_class('http://localhost:5000/',
-                                'epgm_writer',
-                                ['in_graph_conv', 'in_pred', 'in_epgm'])
-
-NodeSplitter = se.http_task_class('http://localhost:5000/',
-                                  'node_splitter',
-                                  ['in_graph_conv'])
-
-RepresentationLearning = se.http_task_class('http://localhost:5000/',
-                                            'representation_learning',
-                                            ['in_vector'])
-
-Inference = se.http_task_class('http://localhost:5000/',
-                               'inference',
-                               ['in_data', 'in_features'])
+# EPGMConverter = se.http_task_class('http://localhost:5000/',
+#                                    'epgm_converter',
+#                                    ['in_epgm'])
+#
+# EPGMWriter = se.http_task_class('http://localhost:5000/',
+#                                 'epgm_writer',
+#                                 ['in_graph_conv', 'in_pred', 'in_epgm'])
+#
+# NodeSplitter = se.http_task_class('http://localhost:5000/',
+#                                   'node_splitter',
+#                                   ['in_graph_conv'])
+#
+# Node2Vec = se.http_task_class('http://localhost:5000/',
+#                             'representation_learning',
+#                             ['in_vector'])
+#
+# Inference = se.http_task_class('http://localhost:5000/',
+#                                'inference',
+#                                ['in_data', 'in_features'])
 
 # ------------------------------------------------------------------------
 # Workflow class
 # ------------------------------------------------------------------------
 
-class Node2Vec(Workflow):
+class Node2VecWorkflow(se.Workflow):
 
     merge_inputs = True
 
     def workflow(self):
         input_graph = self.add_task(se.LocalDataset,
-                                    location="../data/iris.data",
+                                    location="nf_edgelist_1-1000.csv",
                                     params=input_params)
 
         nf_converter = self.add_task(NFConverter)
         nf_converter.in_edgelist = input_graph.out_json
 
-        return nf_converter
+        node2vec = self.add_task(Node2Vec, params=node2vec_params)
+        node2vec.in_vector = nf_converter.out_json
+
+        return node2vec
 
 # ------------------------------------------------------------------------
 # Argument parsing
@@ -127,6 +122,6 @@ if __name__ == '__main__':
     args, cmdline_args = parser.parse_known_args()
 
     # Ensure the cache dir exists
-    set_base_directory(args.output)
+    se.set_base_directory(args.output)
 
-    sl.run(main_task_cls=Node2Vec, cmdline_args=cmdline_args)
+    sl.run_local(main_task_cls=Node2VecWorkflow, cmdline_args=cmdline_args)

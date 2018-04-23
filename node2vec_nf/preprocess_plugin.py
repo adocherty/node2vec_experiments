@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from collections import Counter
@@ -20,8 +21,9 @@ def remap_ids(data, uid_map, mid_map):
 
 
 def preprocess_nf(handler, inputs, output, parameters):
+    print(inputs)
     input_spec = inputs['in_data']
-    edgelist_name = input_spec['edgelist_location']
+    edgelist_name = input_spec['location']
     dataset_name = input_spec['dataset_name']
 
     # Load edgelist
@@ -50,7 +52,7 @@ def preprocess_nf(handler, inputs, output, parameters):
     movie_id_map = {i: "m_{}".format(mId) for i, mId in enumerate(mids)}
     user_id_map = {i + Nm: "u_{}".format(uId) for i, uId in enumerate(uids)}
     id_map = {**movie_id_map, **user_id_map}
-    inv_id_map = dict(id_map.values(), id_map.keys())
+    inv_id_map = dict(zip(id_map.values(), id_map.keys()))
 
     # ID maps for node2vec
     default_map = {i: i for i in range(Nm + Nu)}
