@@ -24,7 +24,9 @@ import sciluigi as sl
 import stellar_evaluation as se
 
 from preprocess_plugin import preprocess_nf
-from plugins.representation_learning_plugin import Node2Vec_task
+from baseline_recommender_plugin import baseline_recommender, baseline_predictor, baseline_metrics
+from node2vec_plugin import Node2Vec_task
+from link_prediction_plugin import link_regression
 
 # Use sciluigi logger
 logger = logging.getLogger('sciluigi-interface')
@@ -34,13 +36,27 @@ logger = logging.getLogger('sciluigi-interface')
 # ------------------------------------------------------------------------
 default_cache_directory = "./cache"
 
-input_params = {
-    'dataset_name': 'NF'
+baseline_recommender_params = {
+    "dataset_name": "ml_100k",
+    "columns": ["user", "item", "rating", "timestamp"],
+    "sep": "\t",
+    "algorithm": "SVD++"
 }
-splitter_params = {
-    'num_samples_per_class': 20,
-    'test_size': 1000,
-    'seed': 345084,
+baseline_predict_params = {
+    "columns": ["user", "item", "rating", "timestamp"],
+    "sep": "\t"
+}
+movielens_conv_params = {
+    "dataset_name": "ml_100k",
+    "columns": ["uId", "mId", "score"],
+    "usecols": [0, 1, 2],
+    "sep": "\t"
+}
+netflix_conv_params = {
+    "dataset_name": "nf_1000",
+    "columns": ["mId", "uId", "score"],
+    "usecols": [0, 1, 3],
+    "sep": ","
 }
 node2vec_params = {
     "p": 1.0, "q": 1.0,
@@ -53,13 +69,10 @@ node2vec_params = {
     'weighted': False,  # are edges weighted?
     'directed': False,  # are edges directed?
 }
-inference_params = {
-    # type of data to use for inference: 'with_attributes', 'with_embeddings', or 'with_metric',
-    'method': 'logistic',  # inference method to use: one of logistic, rforest, kNN
-    'k': 3,  # the number of nearest neighbors for kNN classifier
-    'n': 10,  # number of decision trees for Random Forest (rforest) algorithm
-    'gamma': 1.,  # 1/C parameter for logistic regression (controls the degree of regularization)
-    'penalty': 'l2',  # regularization type for logistic regression, one of 'l2' or 'l1'}
+link_regression_params = {
+    'algorithm': 'nn_concat',
+    'nn_dim': [32],
+    'nn_activation': 'sigmoid'
 }
 
 # ------------------------------------------------------------------------
@@ -70,26 +83,13 @@ NFConverter = se.local_task_class(preprocess_nf,
                                   ['in_edgelist'])
 Node2Vec = se.local_task_class(Node2Vec_task,
                                   ['in_vector'])
-
-# EPGMConverter = se.http_task_class('http://localhost:5000/',
-#                                    'epgm_converter',
-#                                    ['in_epgm'])
-#
-# EPGMWriter = se.http_task_class('http://localhost:5000/',
-#                                 'epgm_writer',
-#                                 ['in_graph_conv', 'in_pred', 'in_epgm'])
-#
-# NodeSplitter = se.http_task_class('http://localhost:5000/',
-#                                   'node_splitter',
-#                                   ['in_graph_conv'])
-#
-# Node2Vec = se.http_task_class('http://localhost:5000/',
-#                             'representation_learning',
-#                             ['in_vector'])
-#
-# Inference = se.http_task_class('http://localhost:5000/',
-#                                'inference',
-#                                ['in_data', 'in_features'])
+LinkRegression = se.local_task_class(link_regression,
+                                  ['in_emb'])
+BaselineRecommender = se.local_task_class(baseline_recommender,
+                                  ['in_data'])
+BaselinePredictor = se.local_task_class(baseline_predictor,
+                                  ['in_model', 'in_test'])
+BaselineMetrics = se.local_task_class(baseline_metrics, ['in_pred'])
 
 # ------------------------------------------------------------------------
 # Workflow class
@@ -100,17 +100,96 @@ class Node2VecWorkflow(se.Workflow):
     merge_inputs = True
 
     def workflow(self):
-        input_graph = self.add_task(se.LocalDataset,
-                                    location="nf_edges_1-1000.csv",
-                                    params=input_params)
+        graph_filename = os.path.expanduser("~/Code/Data/ml-100k/u.data")
 
-        nf_converter = self.add_task(NFConverter)
+        outputs = []
+        for dimensions in [50, 100, 150]:
+            for walk_length in [10, 20]:
+                for iter in [1, 4]:
+                    for algorithm in ['nn_concat', 'nn_mul']:
+                        for activation in ['relu', 'sigmoid', 'linear']:
+                            wf = self.workflow_single(graph_filename,
+                                                 dimensions=dimensions,
+                                                 walk_length=walk_length,
+                                                 iter=iter,
+                                                 algorithm=algorithm,
+                                                 activation=activation)
+                            outputs.append(wf.out_json)
+
+        performance = self.add_task(
+            se.DisplayPerformance,
+            display_params=['dimensions', 'walk_length', 'algorithm', 'iter', 'algorithm', 'activation'],
+            display_metrics={'Test RMSE': 'test_error', 'Train RMSE': 'train_error'},
+        )
+        performance.in_json = outputs
+        return performance
+
+    def workflow_single(self, graph_filename, p=1, q=1, dimensions=256, walk_length=10, iter=1, algorithm='nn_concat', activation='sigmoid', nn_dim=64):
+        node2vec_params['p'] = p
+        node2vec_params['q'] = q
+        node2vec_params['dimensions'] = dimensions
+        node2vec_params['walk_length'] = walk_length
+        node2vec_params['iter'] = iter
+
+        link_regression_params['algorithm'] = algorithm
+        link_regression_params['nn_activation'] = activation
+        link_regression_params['nn_dim'] = [nn_dim]
+
+        input_graph = self.add_task(se.LocalDataset,
+                                    location=graph_filename)
+
+        nf_converter = self.add_task(NFConverter,
+                                     params=movielens_conv_params)
         nf_converter.in_edgelist = input_graph.out_json
 
+        # Split edges
+
+
+        # Node2vec embeddings
         node2vec = self.add_task(Node2Vec, params=node2vec_params)
         node2vec.in_vector = nf_converter.out_json
 
-        return node2vec
+        # Train prediction
+        prediction = self.add_task(LinkRegression, params=link_regression_params)
+        prediction.in_emb = node2vec.out_json
+        prediction.in_graph = nf_converter.out_json
+
+        return prediction
+
+class BaselineWorkflow(se.Workflow):
+
+    merge_inputs = True
+
+    def workflow(self):
+        train_filename = os.path.expanduser("~/Code/Data/ml-100k/u1.base")
+        train_data = self.add_task(se.LocalDataset,
+                                    location=train_filename)
+
+        test_filename = os.path.expanduser("~/Code/Data/ml-100k/u1.test")
+        test_data = self.add_task(se.LocalDataset,
+                                    location=test_filename)
+
+        recommender = self.add_task(BaselineRecommender,
+                                    params=baseline_recommender_params)
+        recommender.in_data = train_data.out_json
+
+        predict = self.add_task(BaselinePredictor,
+                                    params=baseline_predict_params)
+        predict.in_test = test_data.out_json
+        predict.in_model = recommender.out_json
+
+        metrics = self.add_task(BaselineMetrics)
+        metrics.in_pred = predict.out_json
+
+        output = self.add_task(
+            se.DisplayPerformance,
+            display_params=['dataset_name'],
+            display_metrics={'RMSE':'rmse'},
+        )
+        output.in_json = metrics.out_json
+
+        return output
+
 
 # ------------------------------------------------------------------------
 # Argument parsing

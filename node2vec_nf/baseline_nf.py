@@ -2,7 +2,7 @@ from surprise import Dataset, Reader, SVD
 from surprise.model_selection import cross_validate
 
 # Load the movielens-100k dataset (download it if needed).
-#data = Dataset.load_builtin('ml-100k')
+data = Dataset.load_builtin('ml-100k')
 
 # Netflix dataset file
 file_path = 'nf_plain_nodate.csv'
