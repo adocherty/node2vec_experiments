@@ -1,11 +1,8 @@
 #
-# Node2Vec example
-#  Code modified from tensorflow models tutorial
-#  [link]
+#  Code modified from tensorflow models tutorial:
+#  https://www.tensorflow.org/tutorials/representation/word2vec
 #
 
-import datetime
-import six
 import os
 import time
 import pandas as pd
@@ -14,8 +11,7 @@ from contextlib import contextmanager
 import pickle
 import tensorflow as tf
 
-from sklearn import (model_selection, linear_model, multiclass,
-                     metrics, svm, preprocessing, exceptions)
+from sklearn import (exceptions)
 
 import warnings
 
@@ -327,103 +323,6 @@ class W2V_Sampled:
         }
         return self._skipgram_graph
 
-    # def build_nearest_graph(self):
-    #     sk_graph = self._skipgram_graph
-    #
-    #     with tf.name_scope("find_nearest"):
-    #         nemb = tf.nn.l2_normalize(sk_graph["embeddings"], 1)
-    #
-    #         nearby_word = tf.placeholder(dtype=tf.int32, name='nearby_in')
-    #         nearby_emb = tf.gather(nemb, nearby_word)
-    #         nearby_dist = tf.matmul(nearby_emb, nemb, transpose_b=True)
-    #         nearby_val, nearby_idx = tf.nn.top_k(nearby_dist, 5)
-    #
-    #     self._nearby_graph = {
-    #         'input_word': nearby_word,
-    #         'nearby_index': nearby_idx,
-    #         'nearby_val': nearby_val,
-    #     }
-    #     return self._nearby_graph
-    #
-    # def build_analogy_graph(self):
-    #     """Graph for analogy prediction:
-    #
-    #     Each analogy task is to predict the 4th word (d) given three
-    #     words: a, b, c.  E.g., a=italy, b=rome, c=france, we should
-    #     predict d=paris.
-    #     """
-    #     sk_graph = self._skipgram_graph
-    #     with tf.name_scope("analogy"):
-    #         # Predict d from (a,b,c)
-    #         # using the embedding algebra d = c + (b - a)
-    #         analogy_a = tf.placeholder(dtype=tf.int32, name="ana_a")  # [N]
-    #         analogy_b = tf.placeholder(dtype=tf.int32, name="ana_b")  # [N]
-    #         analogy_c = tf.placeholder(dtype=tf.int32, name="ana_c")  # [N]
-    #
-    #         # Normalized word embeddings of shape [vocab_size, emb_dim]
-    #         nemb = sk_graph["normalized_embeddings"]
-    #
-    #         # Each row of a_emb, b_emb, c_emb is a word's embedding vector.
-    #         # They all have the shape [N, emb_dim]
-    #         a_emb = tf.gather(nemb, analogy_a)
-    #         b_emb = tf.gather(nemb, analogy_b)
-    #         c_emb = tf.gather(nemb, analogy_c)
-    #
-    #         # We expect that d's embedding vectors on the unit hyper-sphere is
-    #         # near: c_emb + (b_emb - a_emb), shape: [N, emb_dim]
-    #         target = c_emb + (b_emb - a_emb)
-    #
-    #         # Compute cosine distance between each pair of target and vocab.
-    #         # shape [N, vocab_size]
-    #         dist = tf.matmul(target, nemb, transpose_b=True)
-    #
-    #         # For each question (row in dist), find the top k words.
-    #         _, pred_idx = tf.nn.top_k(dist, self.analogy_k)
-    #
-    #     # Nodes in the construct graph which are used by training and
-    #     # evaluation to run/feed/fetch.
-    #     self._analogy_graph = {
-    #         "a": analogy_a,
-    #         "b": analogy_b,
-    #         "c": analogy_c,
-    #         "predict": pred_idx,
-    #     }
-
-    # def eval_analogy(self, sess, ad):
-    #     # The TF variables for the analogy graph
-    #     tfvar = self._analogy_graph
-    #     total = ad.analogy_questions.shape[0]
-    #
-    #     start = 0
-    #     correct = 0
-    #     while start < total:
-    #         limit = start + 2500
-    #         analogy = ad.analogy_questions[start:limit, :]
-    #
-    #         feed_dict = {
-    #             tfvar["a"]: analogy[:, 0],
-    #             tfvar["b"]: analogy[:, 1],
-    #             tfvar["c"]: analogy[:, 2],
-    #         }
-    #         pred_idx = sess.run(tfvar["predict"], feed_dict)
-    #
-    #         start = limit
-    #         for ii in range(analogy.shape[0]):
-    #             for jj in range(self.analogy_k):
-    #                 if pred_idx[ii, jj] == analogy[ii, 3]:
-    #                     correct += 1
-    #                     break
-    #                 elif pred_idx[ii, jj] in analogy[ii, :3]:
-    #                     # We need to skip words already in the question.
-    #                     continue
-    #                 else:
-    #                     # The correct label is not the precision@1
-    #                     break
-    #
-    #     # print("Eval %4d/%d accuracy = %4.1f%%"%(correct, total,
-    #     #                                         correct*100.0/total))
-    #     return correct / total
-
     def eval(self, sess, dataset, summary=None):
         sk_graph = self._skipgram_graph
 
@@ -538,21 +437,6 @@ class W2V_Sampled:
                                os.path.join(self.save_path, "checkpoint"),
                                global_step=self.global_step)
 
-                    # if batch_ii % 1000 == 0:
-                    # Evaluate and add evaluation info
-                    # sum_ii, ev_ii = self.eval(sess, dataset, summary=summary_op)
-                    # summary_writer.add_summary(sum_ii, batch_ii // 1000)
-                    #
-                    # train_wps = np.floor((dataset.data_index[0] - batch_index)
-                    #                      / (time.time() - batch_time))
-                    # pc_done = 100.0 * dataset.data_index[0] / dataset.split_sizes[0]
-                    # print(
-                    #     "Epoch {} [{:0.1f}%], loss: {:0.1f}, val: {:0.3f}, ana: {:0.2f} word/sec: {:0.0f}  |  "
-                    #         .format(epoch, pc_done, loss_ii, ev_ii, ana_ii, train_wps), end="\r")
-                    #
-                    # batch_time = time.time()
-                    # batch_index = dataset.data_index[0]
-
                 batch_ii += 1
 
             epoch_time = time.time() - epoch_start
@@ -570,7 +454,7 @@ class W2V_Sampled:
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
-flags.DEFINE_float('train_split', 0.8, 'initial learning rate.')
+flags.DEFINE_float('train_split', 1.0, 'train split.')
 flags.DEFINE_float('learning_rate', 0.2, 'initial learning rate.')
 flags.DEFINE_string('train_prefix', '',
                     'name of the object file that stores the training data. must be specified.')
